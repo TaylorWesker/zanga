@@ -77,7 +77,7 @@ pub const MangadexAPI = struct {
     }
 
     fn check_tss_and_wait(timeframe: u64, n_tss: *u8, tss: []i64, comptime MAX_REQUEST: comptime_int) void {
-        var current_time = time.milliTimestamp();
+        const current_time = time.milliTimestamp();
         if (n_tss.* == MAX_REQUEST) {
             var oldest = tss[0];
             while ((current_time - oldest) > timeframe) {
@@ -89,7 +89,7 @@ pub const MangadexAPI = struct {
                 time.sleep(timeframe * time.ns_per_ms);
                 check_tss_and_wait(timeframe, n_tss, tss, MAX_REQUEST);
             } else {
-                var begin = tss.len - n_tss.*;
+                const begin = tss.len - n_tss.*;
                 std.mem.copyForwards(i64, tss[0..], tss[begin..]);
             }
         } else {
@@ -107,17 +107,17 @@ pub const MangadexAPI = struct {
     }
 
     pub fn getMangaInfo(self: *Self, id: []const u8) !json.Parsed(MangaJson) {
-        var url = try bufPrint(&self.manga_api_buffer, MangadexAPI.MANGA_API_TEMPLATE, .{id});
+        const url = try bufPrint(&self.manga_api_buffer, MangadexAPI.MANGA_API_TEMPLATE, .{id});
         self.check_global_tss_and_wait();
         try self.downloader.download_from_url_reset(url, &self.manga_json_buffer);
         return json.parseFromSlice(MangaJson, self.allocator, self.manga_json_buffer.items, .{ .ignore_unknown_fields = true });
     }
 
     pub fn getChapterInfo(self: *Self, id: []const u8) !json.Parsed(ChapterJson) {
-        var url = try bufPrint(&self.chapter_api_buffer, MangadexAPI.CHAPTER_API_TEMPLATE, .{id});
+        const url = try bufPrint(&self.chapter_api_buffer, MangadexAPI.CHAPTER_API_TEMPLATE, .{id});
         self.check_global_tss_and_wait();
         try self.downloader.download_from_url_reset(url, &self.chapter_json_buffer);
-        var res = json.parseFromSlice(ChapterJson, self.allocator, self.chapter_json_buffer.items, .{ .ignore_unknown_fields = true }) catch |e| {
+        const res = json.parseFromSlice(ChapterJson, self.allocator, self.chapter_json_buffer.items, .{ .ignore_unknown_fields = true }) catch |e| {
             std.log.err("{s}\n", .{self.chapter_json_buffer.items});
             var f = try std.fs.cwd().createFile("crash_invalid.json", .{});
             try f.writeAll(self.chapter_json_buffer.items);
@@ -127,7 +127,7 @@ pub const MangadexAPI = struct {
     }
 
     pub fn getPageInfo(self: *Self, id: []const u8) !json.Parsed(PageJson) {
-        var url = try bufPrint(&self.page_api_buffer, MangadexAPI.PAGE_API_TEMPLATE, .{id});
+        const url = try bufPrint(&self.page_api_buffer, MangadexAPI.PAGE_API_TEMPLATE, .{id});
         self.check_global_tss_and_wait();
         self.check_page_tss_and_wait();
         try self.downloader.download_from_url_reset(url, &self.page_json_buffer);
@@ -138,7 +138,7 @@ pub const MangadexAPI = struct {
     }
 
     pub fn getPageImage(self: *Self, base_url: []const u8, hash: []const u8, filename: []const u8) ![]u8 {
-        var url = try bufPrint(&self.download_page_buffer, MangadexAPI.DOWNLOAD_PAGE_TEMPLATE, .{ base_url, hash, filename });
+        const url = try bufPrint(&self.download_page_buffer, MangadexAPI.DOWNLOAD_PAGE_TEMPLATE, .{ base_url, hash, filename });
         self.check_global_tss_and_wait();
         try self.downloader.download_from_url_reset(url, &self.image_buffer);
         return self.image_buffer.items;

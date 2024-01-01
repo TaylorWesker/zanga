@@ -7,10 +7,13 @@ const json = std.json;
 const fs = std.fs;
 
 const zig_cli = @import("zig-cli");
+const rem = @import("rem");
 
 const MangadexAPI = @import("mangadex_api.zig").MangadexAPI;
+const zdl = @import("zdownloader.zig");
 const ZDownloader = @import("zdownloader.zig").ZDownloader;
 const Range = @import("zdownloader.zig").Range;
+const HTTPDownloader = @import("http_downloader.zig").HTTPDownloader;
 
 const KB = @import("size_constant.zig").KB;
 const MB = @import("size_constant.zig").MB;
@@ -60,8 +63,8 @@ fn strToRange(str: []const u8) !Range {
     if (str.len == 0) return ret;
 
     var it = mem.splitScalar(u8, str, '-');
-    var b = it.next() orelse return error.InvalidRangeFormat;
-    var e = it.next() orelse return error.InvalidRangeFormat;
+    const b = it.next() orelse return error.InvalidRangeFormat;
+    const e = it.next() orelse return error.InvalidRangeFormat;
     if (it.next() != null) return error.InvalidRangeFormat;
 
     if (b.len != 0) {
@@ -93,6 +96,11 @@ const app = zig_cli.App{
             .help = "download manga from the url and optional range",
             .action = run_download,
         },
+        &zig_cli.Command{
+            .name = "download2",
+            .help = "download manga from the url and optional range",
+            .action = run_download2,
+        },
     },
 };
 
@@ -116,7 +124,7 @@ fn run_update(args: []const []const u8) !void {
 
     for (app_downloader.manga_entries.entries.items) |e| {
         log.info("updatating {s}", .{e.manga_title});
-        try app_downloader.downloadRange(e.manga_id, .{ .begin = null, .end = null });
+        try app_downloader.downloadRangeMangadex(e.manga_id, .{ .begin = null, .end = null });
     }
 }
 
@@ -126,7 +134,7 @@ fn run_download(args: []const []const u8) !void {
         return error.InvalidArguments;
     }
 
-    var url = args[0];
+    const url = args[0];
     var range_str: []const u8 = "";
 
     std.log.info("url provided is: '{s}'", .{url});
@@ -135,47 +143,53 @@ fn run_download(args: []const []const u8) !void {
         std.log.info("range provided is: '{s}'", .{range_str});
     }
 
-    var manga_id = extract_mangadex_id(url) orelse {
+    const manga_id = extract_mangadex_id(url) orelse {
         log.err("invalid ID provided '{s}'", .{url});
         return;
     };
 
-    var range = try strToRange(range_str);
+    const range = try strToRange(range_str);
 
     app_downloader = try ZDownloader.init(gpa.allocator());
     defer app_downloader.deinit();
     try app_downloader.saveMangaEntries();
 
-    try app_downloader.downloadRange(manga_id, range);
+    try app_downloader.downloadRangeMangadex(manga_id, range);
+    try app_downloader.saveMangaEntries();
+}
+
+fn run_download2(args: []const []const u8) !void {
+    std.log.info("download command launched", .{});
+    if (args.len != 1 and args.len != 2) {
+        return error.InvalidArguments;
+    }
+
+    const url = args[0];
+    var range_str: []const u8 = "";
+
+    std.log.info("url provided is: '{s}'", .{url});
+    if (args.len == 2) {
+        range_str = args[1];
+        std.log.info("range provided is: '{s}'", .{range_str});
+    }
+
+    // const manga_id = extract_mangadex_id(url) orelse {
+    //     log.err("invalid ID provided '{s}'", .{url});
+    //     return;
+    // };
+
+    const range = try strToRange(range_str);
+
+    app_downloader = try ZDownloader.init(gpa.allocator());
+    defer app_downloader.deinit();
+    try app_downloader.saveMangaEntries();
+
+    try app_downloader.downloadRangeMangakarot(url, range);
     try app_downloader.saveMangaEntries();
 }
 
 pub fn main() !void {
     try zig_cli.run(&app, gpa.allocator());
-    // var args = try std.process.argsWithAllocator(gpa.allocator());
-    // _ = args.skip();
-
-    // log.info("download path is: '{s}'", .{app_downloader.download_path});
-
-    // try app_downloader.saveMangaEntries();
-
-    // log.info("Downloader initialized !", .{});
-
-    // var url = args.next() orelse {
-    //     log.err("no url provided", .{});
-    //     return;
-    // };
-
-    // var range_str = args.next() orelse "";
-
-    // var manga_id = extract_mangadex_id(url) orelse {
-    //     log.err("invalid ID provided '{s}'", .{url});
-    //     return;
-    // };
-
-    // var range = try strToRange(range_str);
-
-    // try app_downloader.downloadRange(manga_id, range);
-
-    // try app_downloader.saveMangaEntries();
+    // const url = "https://ww7.mangakakalot.tv/manga/manga-ba979135";
+    // try zdl.handleMangaPage(url, gpa.allocator());
 }

@@ -14,7 +14,7 @@ pub const HTTPDownloader = struct {
     headers: http.Headers,
 
     pub fn init(allocator: mem.Allocator) !Self {
-        var headers = http.Headers.init(allocator);
+        const headers = http.Headers.init(allocator);
         // try headers.append("User-Agent", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/27.0.1453.110 Safari/537.36");
         return .{
             .client = http.Client{ .allocator = allocator },
@@ -34,14 +34,14 @@ pub const HTTPDownloader = struct {
 
     pub fn download_from_url_append(downloader: *Self, url: []const u8, buffer: *ArrayList(u8)) !void {
         try buffer.ensureTotalCapacity(4 * KB);
-        var uri = try std.Uri.parse(url);
-        var request = try downloader.client.request(.GET, uri, downloader.headers, .{});
+        const uri = try std.Uri.parse(url);
+        var request = try downloader.client.open(.GET, uri, downloader.headers, .{});
         defer request.deinit();
-        try request.start();
+        try request.send(.{});
         try request.wait();
 
         while (true) {
-            var readed = try request.read(buffer.allocatedSlice()[buffer.items.len..]);
+            const readed = try request.read(buffer.allocatedSlice()[buffer.items.len..]);
             buffer.items.len += readed;
             if (readed == 0) break;
             if (buffer.items.len == buffer.capacity) try buffer.ensureTotalCapacity(buffer.capacity * 2);
