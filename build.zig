@@ -5,20 +5,10 @@ pub fn build(b: *std.Build) void {
 
     const optimize = b.standardOptimizeOption(.{});
 
-    const zig_cli_module = b.addModule("zig-cli", .{
-        .source_file = std.Build.FileSource.relative("deps/zig-cli/src/main.zig"),
-    });
-
-    const zig_cli = b.addStaticLibrary(.{
-        .name = "zig-cli",
-        .root_source_file = .{ .path = "deps/zig-cli/src/main.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    b.installArtifact(zig_cli);
+    const zig_cli_module = b.dependency("zig-cli", .{});
 
     const rem_module = b.addModule("rem", .{
-        .source_file = std.Build.FileSource.relative("deps/rem/rem.zig"),
+        .root_source_file = std.Build.LazyPath.relative("deps/rem/rem.zig"),
     });
 
     const rem = b.addStaticLibrary(.{
@@ -36,8 +26,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe.addModule("zig-cli", zig_cli_module);
-    exe.addModule("rem", rem_module);
+
+    exe.root_module.addImport("zig-cli", zig_cli_module.module("zig-cli"));
+    exe.root_module.addImport("rem", rem_module);
 
     b.installArtifact(exe);
 

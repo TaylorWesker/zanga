@@ -79,46 +79,85 @@ fn strToRange(str: []const u8) !Range {
 }
 
 const app = zig_cli.App{
-    .name = "zanga",
-    .subcommands = &.{
-        &zig_cli.Command{
-            .name = "init",
-            .help = "initialize the zanga global config file",
-            .action = run_init,
-        },
-        &zig_cli.Command{
-            .name = "update",
-            .help = "download all the latest chapter for all mangas in manga.list",
-            .action = run_update,
-        },
-        &zig_cli.Command{
-            .name = "download",
-            .help = "download manga from the url and optional range",
-            .action = run_download,
-        },
-        &zig_cli.Command{
-            .name = "download2",
-            .help = "download manga from the url and optional range",
-            .action = run_download2,
+    .command = zig_cli.Command{
+        .name = "zanga",
+        .description = zig_cli.Description{ .one_line = "A manga downloader" },
+        .target = zig_cli.CommandTarget{
+            .subcommands = &.{
+                &zig_cli.Command{
+                    .name = "init",
+                    .description = zig_cli.Description{ .one_line = "initialize the zanga global config file" },
+                    .target = zig_cli.CommandTarget{
+                        .action = zig_cli.CommandAction{
+                            .positional_args = zig_cli.PositionalArgs{
+                                .args = &.{
+                                    &init_posarg,
+                                },
+                            },
+                            .exec = run_init,
+                        },
+                    },
+                },
+                &zig_cli.Command{
+                    .name = "update",
+                    .description = zig_cli.Description{ .one_line = "download all the latest chapter for all mangas in manga.list" },
+                    .target = zig_cli.CommandTarget{
+                        .action = zig_cli.CommandAction{
+                            .exec = run_update,
+                        },
+                    },
+                },
+                &zig_cli.Command{
+                    .name = "download",
+                    .description = zig_cli.Description{ .one_line = "download manga from the url and optional range" },
+                    .target = zig_cli.CommandTarget{
+                        .action = zig_cli.CommandAction{
+                            .positional_args = zig_cli.PositionalArgs{
+                                .args = &.{ &download_posarg1, &download_posarg2 },
+                                .first_optional_arg = &download_posarg2,
+                            },
+                            .exec = run_download,
+                        },
+                    },
+                },
+                &zig_cli.Command{
+                    .name = "download2",
+                    .description = zig_cli.Description{ .one_line = "download manga from the url and optional range" },
+                    .target = zig_cli.CommandTarget{
+                        .action = zig_cli.CommandAction{
+                            .positional_args = zig_cli.PositionalArgs{
+                                .args = &.{ &download_posarg1, &download_posarg2 },
+                                .first_optional_arg = &download_posarg2,
+                            },
+                            .exec = run_download2,
+                        },
+                    },
+                },
+            },
         },
     },
 };
 
-fn run_init(args: []const []const u8) !void {
-    std.log.info("init command launched", .{});
-    if (args.len != 1) {
-        return error.InvalidArguments;
-    }
-    std.log.info("path provied is: '{s}'", .{args[0]});
+const InitArgs = struct {
+    download_path: []const u8 = "",
+};
+var init_args = InitArgs{};
 
-    try ZDownloader.setDownloadPath(args[0], gpa.allocator());
+var init_posarg = zig_cli.PositionalArg{
+    .name = "download_path",
+    .help = "the path where the scans will be downloaded",
+    .value_ref = zig_cli.mkRef(&init_args.download_path),
+};
+
+fn run_init() !void {
+    std.log.info("init command launched", .{});
+    std.log.info("path provied is: '{s}'", .{init_args.download_path});
+
+    try ZDownloader.setDownloadPath(init_args.download_path, gpa.allocator());
 }
 
-fn run_update(args: []const []const u8) !void {
+fn run_update() !void {
     std.log.info("update command launched", .{});
-    if (args.len != 0) {
-        return error.InvalidArguments;
-    }
 
     app_downloader = try ZDownloader.init(gpa.allocator());
 
@@ -128,18 +167,31 @@ fn run_update(args: []const []const u8) !void {
     }
 }
 
-fn run_download(args: []const []const u8) !void {
-    std.log.info("download command launched", .{});
-    if (args.len != 1 and args.len != 2) {
-        return error.InvalidArguments;
-    }
+const DowloadArgs = struct {
+    url: []const u8 = "",
+    range_str: []const u8 = "",
+};
+var download_args = DowloadArgs{};
 
-    const url = args[0];
-    var range_str: []const u8 = "";
+var download_posarg1 = zig_cli.PositionalArg{
+    .name = "url",
+    .help = "url to the mangadex manga page",
+    .value_ref = zig_cli.mkRef(&download_args.url),
+};
+var download_posarg2 = zig_cli.PositionalArg{
+    .name = "range",
+    .help = "range to be downloaded",
+    .value_ref = zig_cli.mkRef(&download_args.range_str),
+};
+
+fn run_download() !void {
+    std.log.info("download command launched", .{});
+
+    const url = download_args.url;
+    const range_str: []const u8 = download_args.range_str;
 
     std.log.info("url provided is: '{s}'", .{url});
-    if (args.len == 2) {
-        range_str = args[1];
+    if (range_str.len != 0) {
         std.log.info("range provided is: '{s}'", .{range_str});
     }
 
@@ -158,18 +210,14 @@ fn run_download(args: []const []const u8) !void {
     try app_downloader.saveMangaEntries();
 }
 
-fn run_download2(args: []const []const u8) !void {
+fn run_download2() !void {
     std.log.info("download command launched", .{});
-    if (args.len != 1 and args.len != 2) {
-        return error.InvalidArguments;
-    }
 
-    const url = args[0];
-    var range_str: []const u8 = "";
+    const url = download_args.url;
+    const range_str: []const u8 = download_args.range_str;
 
     std.log.info("url provided is: '{s}'", .{url});
-    if (args.len == 2) {
-        range_str = args[1];
+    if (range_str.len != 0) {
         std.log.info("range provided is: '{s}'", .{range_str});
     }
 

@@ -11,20 +11,16 @@ pub const HTTPDownloader = struct {
     const Self = @This();
 
     client: http.Client,
-    headers: http.Headers,
 
     pub fn init(allocator: mem.Allocator) !Self {
-        const headers = http.Headers.init(allocator);
         // try headers.append("User-Agent", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/27.0.1453.110 Safari/537.36");
         return .{
             .client = http.Client{ .allocator = allocator },
-            .headers = headers,
         };
     }
 
     pub fn deinit(downloader: *Self) void {
         downloader.client.deinit();
-        downloader.headers.deinit();
     }
 
     pub fn download_from_url_reset(downloader: *Self, url: []const u8, buffer: *ArrayList(u8)) !void {
@@ -35,7 +31,9 @@ pub const HTTPDownloader = struct {
     pub fn download_from_url_append(downloader: *Self, url: []const u8, buffer: *ArrayList(u8)) !void {
         try buffer.ensureTotalCapacity(4 * KB);
         const uri = try std.Uri.parse(url);
-        var request = try downloader.client.open(.GET, uri, downloader.headers, .{});
+        const header_buffer = [_]u8{0} ** 1024;
+        const header_buffer_slice: []u8 = @constCast(&header_buffer);
+        var request = try downloader.client.open(.GET, uri, .{ .server_header_buffer = header_buffer_slice });
         defer request.deinit();
         try request.send(.{});
         try request.wait();
