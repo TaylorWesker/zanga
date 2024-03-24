@@ -13,7 +13,6 @@ pub const HTTPDownloader = struct {
     client: http.Client,
 
     pub fn init(allocator: mem.Allocator) !Self {
-        // try headers.append("User-Agent", "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/27.0.1453.110 Safari/537.36");
         return .{
             .client = http.Client{ .allocator = allocator },
         };
@@ -29,20 +28,7 @@ pub const HTTPDownloader = struct {
     }
 
     pub fn download_from_url_append(downloader: *Self, url: []const u8, buffer: *ArrayList(u8)) !void {
-        try buffer.ensureTotalCapacity(4 * KB);
-        const uri = try std.Uri.parse(url);
-        const header_buffer = [_]u8{0} ** 1024;
-        const header_buffer_slice: []u8 = @constCast(&header_buffer);
-        var request = try downloader.client.open(.GET, uri, .{ .server_header_buffer = header_buffer_slice });
-        defer request.deinit();
-        try request.send(.{});
-        try request.wait();
-
-        while (true) {
-            const readed = try request.read(buffer.allocatedSlice()[buffer.items.len..]);
-            buffer.items.len += readed;
-            if (readed == 0) break;
-            if (buffer.items.len == buffer.capacity) try buffer.ensureTotalCapacity(buffer.capacity * 2);
-        }
+        std.log.info("{s}", .{url});
+        _ = try downloader.client.fetch(.{ .location = .{ .url = url }, .method = .GET, .response_storage = .{ .dynamic = buffer }, .max_append_size = 10 * MB, .keep_alive = false });
     }
 };
