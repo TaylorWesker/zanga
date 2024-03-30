@@ -22,6 +22,25 @@ const GB = @import("size_constant.zig").GB;
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var app_downloader: ZDownloader = undefined;
 
+const IdType = enum {
+    mangadex,
+    mangakarot,
+    unknown,
+};
+
+fn get_id_type(id: []const u8) IdType {
+    if (is_mangadex_id(id)) return .mangadex;
+    // /manga-ba979135
+    if (is_mangakarot_id(id)) return .mangakarot;
+    return .unknown;
+}
+
+fn is_mangakarot_id(id: []const u8) bool {
+    const uri = std.Uri.parse(id) catch return false;
+    if (std.mem.startsWith(u8, uri.host.?, "ww7.mangakakalot.tv")) return true;
+    return false;
+}
+
 fn is_mangadex_id(s: []const u8) bool {
     if (s.len != 36) return false;
 
@@ -163,7 +182,13 @@ fn run_update() !void {
 
     for (app_downloader.manga_entries.entries.items) |e| {
         log.info("updatating {s}", .{e.manga_title});
-        try app_downloader.downloadRangeMangadex(e.manga_id, .{ .begin = null, .end = null });
+        const t = get_id_type(e.manga_id);
+        switch (t) {
+            .mangadex => try app_downloader.downloadRangeMangadex(e.manga_id, .{ .begin = null, .end = null }),
+            // .mangadex => {},
+            .mangakarot => try app_downloader.downloadRangeMangakarot(e.manga_id, .{ .begin = null, .end = null }),
+            .unknown => std.log.warn("{s} -> Is not a known ID", .{e.manga_id}),
+        }
     }
 }
 
