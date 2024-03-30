@@ -10,6 +10,8 @@ const KB = @import("size_constant.zig").KB;
 const MB = @import("size_constant.zig").MB;
 const GB = @import("size_constant.zig").GB;
 
+const RateLimiter = @import("rate_limiter.zig").RateLimiter;
+
 pub const MangadexAPI = struct {
     const Self = @This();
 
@@ -52,10 +54,8 @@ pub const MangadexAPI = struct {
     page_json_buffer: ArrayList(u8),
     image_buffer: ArrayList(u8),
 
-    global_tss: [MangadexAPI.GLOBAL_MAX_REQUEST]i64 = [_]i64{std.math.minInt(i64)} ** MangadexAPI.GLOBAL_MAX_REQUEST,
-    page_tss: [MangadexAPI.PAGE_MAX_REQUEST]i64 = [_]i64{std.math.minInt(i64)} ** MangadexAPI.PAGE_MAX_REQUEST,
-    n_global_tss: u8 = 0,
-    n_page_tss: u8 = 0,
+    global_limiter: RateLimiter(MangadexAPI.GLOBAL_MAX_REQUEST, time.ns_per_s) = .{},
+    page_limiter: RateLimiter(MangadexAPI.PAGE_MAX_REQUEST, time.ns_per_min) = .{},
 
     pub fn init(allocator: Allocator) !Self {
         return .{
@@ -76,51 +76,71 @@ pub const MangadexAPI = struct {
         self.image_buffer.deinit();
     }
 
-    fn check_tss_and_wait(timeframe: u64, n_tss: *u8, tss: []i64, comptime MAX_REQUEST: comptime_int) void {
-        const current_time = time.milliTimestamp();
-        if (n_tss.* == MAX_REQUEST) {
-            var oldest = tss[0];
-            while ((current_time - oldest) > timeframe) {
-                n_tss.* -= 1;
-                if (n_tss.* == 0) break;
-                oldest = tss[tss.len - n_tss.*];
-            }
-            if (n_tss.* == MAX_REQUEST) {
-                time.sleep(timeframe * time.ns_per_ms);
-                check_tss_and_wait(timeframe, n_tss, tss, MAX_REQUEST);
-            } else {
-                const begin = tss.len - n_tss.*;
-                std.mem.copyForwards(i64, tss[0..], tss[begin..]);
-            }
-        } else {
-            tss[n_tss.*] = current_time;
-            n_tss.* += 1;
-        }
+    fn check_tss_and_wait(limiter_type: type, limiter: *limiter_type) void {
+        const current_time = time.Instant.now() catch unreachable;
+        if (!limiter.push_action(current_time))
+            limiter.clear_out_of_periode(current_time);
+        if (!limiter.push_action(current_time))
+            limiter.wait_to_clear(current_time);
+        _ = limiter.push_action(current_time);
     }
 
     fn check_global_tss_and_wait(self: *Self) void {
-        MangadexAPI.check_tss_and_wait(time.ms_per_s, &self.n_global_tss, &self.global_tss, MangadexAPI.GLOBAL_MAX_REQUEST);
+        MangadexAPI.check_tss_and_wait(@TypeOf(self.global_limiter), &self.global_limiter);
     }
 
     fn check_page_tss_and_wait(self: *Self) void {
-        MangadexAPI.check_tss_and_wait(time.ms_per_s, &self.n_page_tss, &self.page_tss, MangadexAPI.PAGE_MAX_REQUEST);
+        MangadexAPI.check_tss_and_wait(@TypeOf(self.page_limiter), &self.page_limiter);
     }
 
     pub fn getMangaInfo(self: *Self, id: []const u8) !json.Parsed(MangaJson) {
         const url = try bufPrint(&self.manga_api_buffer, MangadexAPI.MANGA_API_TEMPLATE, .{id});
         self.check_global_tss_and_wait();
         try self.downloader.download_from_url_reset(url, &self.manga_json_buffer);
-        return json.parseFromSlice(MangaJson, self.allocator, self.manga_json_buffer.items, .{ .ignore_unknown_fields = true });
+        // return json.parseFromSlice(MangaJson, self.allocator, self.manga_json_buffer.items, .{ .ignore_unknown_fields = true }) catch |err| {
+        //     std.log.err("{s}\n", .{self.manga_json_buffer.items});
+        //     var f = try std.fs.cwd().createFile("crash_invalid.json", .{});
+        //     try f.writeAll(self.chapter_json_buffer.items);
+        //     return err;
+        // };
+        const input = self.manga_json_buffer.items;
+
+        var scanner = json.Scanner.initCompleteInput(self.allocator, input);
+        defer scanner.deinit();
+
+        var diagnostics = std.json.Diagnostics{};
+        scanner.enableDiagnostics(&diagnostics);
+
+        const res = json.parseFromTokenSource(MangaJson, self.allocator, &scanner, .{ .ignore_unknown_fields = true }) catch |e| {
+            // const res = json.parseFromSlice(ChapterJson, self.allocator, self.chapter_json_buffer.items, .{ .ignore_unknown_fields = true }) catch |e| {
+            std.log.err("{s}\n", .{input});
+            var f = try std.fs.cwd().createFile("crash_invalid.json", .{});
+            try f.writeAll(input);
+            std.log.err("{}:{}:{} '{s}'", .{ diagnostics.getLine(), diagnostics.getColumn(), diagnostics.getByteOffset(), input[diagnostics.getByteOffset() .. diagnostics.getByteOffset() + 10] });
+            return e;
+        };
+        return res;
     }
 
     pub fn getChapterInfo(self: *Self, id: []const u8) !json.Parsed(ChapterJson) {
         const url = try bufPrint(&self.chapter_api_buffer, MangadexAPI.CHAPTER_API_TEMPLATE, .{id});
         self.check_global_tss_and_wait();
         try self.downloader.download_from_url_reset(url, &self.chapter_json_buffer);
-        const res = json.parseFromSlice(ChapterJson, self.allocator, self.chapter_json_buffer.items, .{ .ignore_unknown_fields = true }) catch |e| {
-            std.log.err("{s}\n", .{self.chapter_json_buffer.items});
+
+        const input = self.chapter_json_buffer.items;
+
+        var scanner = json.Scanner.initCompleteInput(self.allocator, input);
+        defer scanner.deinit();
+
+        var diagnostics = std.json.Diagnostics{};
+        scanner.enableDiagnostics(&diagnostics);
+
+        const res = json.parseFromTokenSource(ChapterJson, self.allocator, &scanner, .{ .ignore_unknown_fields = true }) catch |e| {
+            // const res = json.parseFromSlice(ChapterJson, self.allocator, self.chapter_json_buffer.items, .{ .ignore_unknown_fields = true }) catch |e| {
+            std.log.err("{s}\n", .{input});
             var f = try std.fs.cwd().createFile("crash_invalid.json", .{});
-            try f.writeAll(self.chapter_json_buffer.items);
+            try f.writeAll(input);
+            std.log.err("{}:{}:{} '{s}'", .{ diagnostics.getLine(), diagnostics.getColumn(), diagnostics.getByteOffset(), input[diagnostics.getByteOffset() .. diagnostics.getByteOffset() + 10] });
             return e;
         };
         return res;
@@ -131,10 +151,27 @@ pub const MangadexAPI = struct {
         self.check_global_tss_and_wait();
         self.check_page_tss_and_wait();
         try self.downloader.download_from_url_reset(url, &self.page_json_buffer);
-        return json.parseFromSlice(PageJson, self.allocator, self.page_json_buffer.items, .{ .ignore_unknown_fields = true }) catch |err| {
-            std.debug.print("{s}\n", .{self.page_json_buffer.items});
-            return err;
+        // return json.parseFromSlice(PageJson, self.allocator, self.page_json_buffer.items, .{ .ignore_unknown_fields = true }) catch |err| {
+        //     std.debug.print("{s}\n", .{self.page_json_buffer.items});
+        //     return err;
+        // };
+        const input = self.page_json_buffer.items;
+
+        var scanner = json.Scanner.initCompleteInput(self.allocator, input);
+        defer scanner.deinit();
+
+        var diagnostics = std.json.Diagnostics{};
+        scanner.enableDiagnostics(&diagnostics);
+
+        const res = json.parseFromTokenSource(PageJson, self.allocator, &scanner, .{ .ignore_unknown_fields = true }) catch |e| {
+            // const res = json.parseFromSlice(ChapterJson, self.allocator, self.chapter_json_buffer.items, .{ .ignore_unknown_fields = true }) catch |e| {
+            std.log.err("{s}\n", .{input});
+            var f = try std.fs.cwd().createFile("crash_invalid.json", .{});
+            try f.writeAll(input);
+            std.log.err("{}:{}:{} '{s}'", .{ diagnostics.getLine(), diagnostics.getColumn(), diagnostics.getByteOffset(), input[diagnostics.getByteOffset() .. diagnostics.getByteOffset() + 10] });
+            return e;
         };
+        return res;
     }
 
     pub fn getPageImage(self: *Self, base_url: []const u8, hash: []const u8, filename: []const u8) ![]u8 {
