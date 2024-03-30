@@ -7,6 +7,8 @@ const KB = @import("size_constant.zig").KB;
 const MB = @import("size_constant.zig").MB;
 const GB = @import("size_constant.zig").GB;
 
+const MAX_TIMEOUT_RETRIES = 4;
+
 pub const HTTPDownloader = struct {
     const Self = @This();
 
@@ -28,7 +30,16 @@ pub const HTTPDownloader = struct {
     }
 
     pub fn download_from_url_append(downloader: *Self, url: []const u8, buffer: *ArrayList(u8)) !void {
-        std.log.info("{s}", .{url});
-        _ = try downloader.client.fetch(.{ .location = .{ .url = url }, .method = .GET, .response_storage = .{ .dynamic = buffer }, .max_append_size = 10 * MB, .keep_alive = false });
+        var n_tries: u8 = 0;
+        while (n_tries < MAX_TIMEOUT_RETRIES) : (n_tries += 1) {
+            _ = downloader.client.fetch(.{ .location = .{ .url = url }, .method = .GET, .response_storage = .{ .dynamic = buffer }, .max_append_size = 20 * MB, .keep_alive = false }) catch |err| {
+                if (err == error.ConnectionTimedOut) {
+                    continue;
+                } else return err;
+            };
+            break;
+        } else {
+            _ = try downloader.client.fetch(.{ .location = .{ .url = url }, .method = .GET, .response_storage = .{ .dynamic = buffer }, .max_append_size = 20 * MB, .keep_alive = false });
+        }
     }
 };
