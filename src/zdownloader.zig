@@ -532,18 +532,17 @@ pub const ZDownloader = struct {
             // std.debug.print("{s}\n", .{chap_number});
 
             const chap_value: f32 = try std.fmt.parseFloat(f32, chap_number);
-            _ = chap_value;
-            // if (range.begin) |begin| {
-            //     const fbegin: f32 = @floatFromInt(begin);
-            //     if (chap_value < fbegin) {
-            //         chapter_progress.completeOne();
-            //         continue;
-            //     }
-            // }
-            // if (range.end) |end| {
-            //     const fend: f32 = @floatFromInt(end);
-            //     if (chap_value > fend) break;
-            // }
+            if (range.begin) |begin| {
+                const fbegin: f32 = @floatFromInt(begin);
+                if (chap_value < fbegin) {
+                    chapter_progress.completeOne();
+                    continue;
+                }
+            }
+            if (range.end) |end| {
+                const fend: f32 = @floatFromInt(end);
+                if (chap_value > fend) break;
+            }
 
             const chapter_dir = try manga_dir.makeOpenPath(chap_number, .{});
 
@@ -557,7 +556,7 @@ pub const ZDownloader = struct {
                     if (el.getAttribute(.{ .prefix = .none, .namespace = .none, .local_name = "data-src" })) |src| {
                         const s2 = try std.fmt.bufPrint(&url_next, "{s}", .{src});
                         _ = s2;
-                        // std.debug.print("{}.jpg: {s}\n", .{ i, s2 });
+                        // std.debug.print("{}.jpg: {s} {s}\n", .{ i, s2, chap_number });
                         try self.mangadex_api.downloader.download_from_url_reset(src, &self.mangadex_api.image_buffer);
                         const image = self.mangadex_api.image_buffer.items;
                         const page_name = try std.fmt.bufPrint(&name_buffer, "{}.jpg", .{i});
