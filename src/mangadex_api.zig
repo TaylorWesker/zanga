@@ -24,12 +24,13 @@ pub const MangadexAPI = struct {
     const PAGE_MAX_REQUEST = 39;
 
     pub const MangaJson = struct { data: struct { attributes: struct { title: struct {
-        en: []u8,
+        en: ?[]u8 = null,
+        ja: ?[]u8 = null,
     } } } };
 
     pub const ChapterJson = struct { data: []struct { id: []u8, attributes: struct {
-        chapter: ?[]u8,
-        title: ?[]u8,
+        chapter: ?[]u8 = null,
+        title: ?[]u8 = null,
     } } };
 
     pub const PageJson = struct { baseUrl: []u8, chapter: struct {
