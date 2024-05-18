@@ -396,7 +396,7 @@ pub const ZDownloader = struct {
         var chapter_info = try api.getChapterInfo(manga_id);
         defer chapter_info.deinit();
 
-        const manga_title = manga_info.value.data.attributes.title.en;
+        const manga_title = if (manga_info.value.data.attributes.title.en) |v| v else manga_info.value.data.attributes.title.ja.?;
 
         debug.print("{s}\n", .{manga_title});
 
@@ -546,7 +546,10 @@ pub const ZDownloader = struct {
 
             const chapter_dir = try manga_dir.makeOpenPath(chap_number, .{});
 
-            const s = try std.fmt.bufPrint(&url_next, "https://{s}{s}", .{ uri.host.?, link });
+            const s: []u8 = switch (uri.host.?) {
+                .raw => try std.fmt.bufPrint(&url_next, "https://{s}{s}", .{ uri.host.?.raw, link }),
+                .percent_encoded => try std.fmt.bufPrint(&url_next, "https://{s}{s}", .{ uri.host.?.percent_encoded, link }),
+            };
             const pages = try mangakarot_api.getChapterImages(s, &self.mangadex_api.downloader, self.allocator);
             // var page_progress = chapter_progress.start("Pages", chaps.data.len);
             var i: usize = 1;

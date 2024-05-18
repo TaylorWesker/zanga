@@ -22,13 +22,20 @@ const GB = @import("size_constant.zig").GB;
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var app_downloader: ZDownloader = undefined;
 
-const IdType = enum {
+const ApiType = enum {
     mangadex,
     mangakarot,
     unknown,
 };
 
-fn get_id_type(id: []const u8) IdType {
+fn get_url_type(url: []const u8) ApiType {
+    const mangadex_id = extract_mangadex_id(url);
+    if (mangadex_id != null) return .mangadex;
+    if (is_mangakarot_id(url)) return .mangakarot;
+    return .unknown;
+}
+
+fn get_id_type(id: []const u8) ApiType {
     if (is_mangadex_id(id)) return .mangadex;
     // /manga-ba979135
     if (is_mangakarot_id(id)) return .mangakarot;
@@ -37,7 +44,14 @@ fn get_id_type(id: []const u8) IdType {
 
 fn is_mangakarot_id(id: []const u8) bool {
     const uri = std.Uri.parse(id) catch return false;
-    if (std.mem.startsWith(u8, uri.host.?, "ww7.mangakakalot.tv")) return true;
+    switch (uri.host.?) {
+        .raw => {
+            if (std.mem.startsWith(u8, uri.host.?.raw, "ww7.mangakakalot.tv")) return true;
+        },
+        .percent_encoded => {
+            if (std.mem.startsWith(u8, uri.host.?.percent_encoded, "ww7.mangakakalot.tv")) return true;
+        },
+    }
     return false;
 }
 
@@ -231,7 +245,13 @@ fn run_download() !void {
     defer app_downloader.deinit();
     try app_downloader.saveMangaEntries();
 
-    try app_downloader.downloadRangeMangadex(manga_id, range);
+    const t = get_url_type(manga_id);
+    switch (t) {
+        .mangadex => try app_downloader.downloadRangeMangadex(manga_id, range),
+        .mangakarot => try app_downloader.downloadRangeMangakarot(manga_id, range),
+        .unknown => std.log.warn("{s} -> Is not a known ID", .{manga_id}),
+    }
+
     try app_downloader.saveMangaEntries();
 }
 
