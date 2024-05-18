@@ -7,28 +7,17 @@ pub fn build(b: *std.Build) void {
 
     const zig_cli_module = b.dependency("zig-cli", .{});
 
-    const rem_module = b.addModule("rem", .{
-        .root_source_file = std.Build.LazyPath.relative("deps/rem/rem.zig"),
-    });
-
-    const rem = b.addStaticLibrary(.{
-        .name = "rem",
-        .root_source_file = .{ .path = "deps/rem/rem.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    b.installArtifact(rem);
+    const rem_module = b.dependency("rem", .{});
 
     const exe = b.addExecutable(.{
         .name = "zanga",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     exe.root_module.addImport("zig-cli", zig_cli_module.module("zig-cli"));
-    exe.root_module.addImport("rem", rem_module);
+    exe.root_module.addImport("rem", rem_module.module("rem"));
 
     b.installArtifact(exe);
 
